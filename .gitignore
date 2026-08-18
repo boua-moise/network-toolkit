@@ -1,0 +1,18 @@
+# Cache Python
+__pycache__/
+*.py[cod]
+
+# Environnements virtuels
+.venv/
+venv/
+
+# Fichiers d'éditeurs
+.vscode/
+.idea/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Variables d'environnement et secrets
+.env
