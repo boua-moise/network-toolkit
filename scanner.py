@@ -1,6 +1,6 @@
 """Outil pédagogique de vérification d'un port TCP."""
 
-import socket, argparse, errno, sys
+import socket, argparse, errno, sys, threading, queue
 
 
 ########################### Scanne des ports #########################################
@@ -34,14 +34,13 @@ def scanner_port(hote: str, port: int, timeout: float = 0.5) -> tuple[int, str]:
 
     if resultat_test == 0:
         etat = "OUVERT"
+        return resultat_test == 0
     elif resultat_test == errno.ECONNREFUSED:
         etat = "FERME"
     elif resultat_test == errno.ETIMEDOUT:
         etat = "TIMEOUT"
     else:
         etat = "INACCESSIBLE"
-
-    return (port, etat)
 
 
 def scanner_plage_ports(
@@ -110,10 +109,8 @@ def afficher_resultats(hote:str, ports_ouverts:tuple[int, str]) -> None:
         print("Aucun port ouvert")
 
     else:
-
-        for port, etat in ports_ouverts:
-            if etat == "OUVERT":
-                print(f"- Port {port} {etat}")
+        for port in ports_ouverts:
+            print(f"- Port {port} ouvert")
 
 
 ########################### Vériffication d'adresse IP #########################################
@@ -209,14 +206,66 @@ def analyser_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+########################### Threading #########################################
+
+def worker(hote:str, timeout:float, file_ports, ports_ouvert:list[int], numero:int, verrou_port_ouvert) -> None:
+    print(f"Démarage du worker - {numero}")
+
+    while True:
+
+        try:
+            port = file_ports.get()
+
+            if port is None:
+                print(f"Fin du worker - {numero}")
+                return 
+
+        except Exception:
+            print("except")
+
+        finally:
+            file_ports.task_done()
+
+        if scanner_port(hote, port, timeout):
+
+            with verrou_port_ouvert:
+                ports_ouvert.append(port)
+
+
 ########################### Fonction principale #########################################
 
 def main():
 
+    NOMBRE_WORKER_SENTINELLE = 10
+
+    threads: list[threading.Thread] = []
+    ports_ouverts: list[int] = []
+
+    file_ports = queue.Queue(maxsize=10000)
+    verrou = threading.Lock()
+
     try:
         arguments = analyser_arguments()
-        print("\nVeuillez patienter, scan en cours...\n")
-        ports_ouverts = scanner_plage_ports(arguments.cible, arguments.ports[0], arguments.ports[1])
+
+        for port in range(arguments.ports[0], arguments.ports[1]+1):
+            file_ports.put(port)
+
+        for _ in range(NOMBRE_WORKER_SENTINELLE):
+            file_ports.put(None)
+
+        for nbr in range(NOMBRE_WORKER_SENTINELLE):
+            thread = threading.Thread(
+                target=worker,
+                args=(arguments.cible, arguments.timeout, file_ports, ports_ouverts, nbr, verrou)
+            )
+            thread.start()
+            threads.append(thread)
+
+        file_ports.join()
+
+        for thread in threads:
+            thread.join()
+
         afficher_resultats(arguments.cible, ports_ouverts)
         return 0
 
