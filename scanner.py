@@ -82,7 +82,7 @@ def analyser_timeout(texte:str) -> float:
             "La valeur saisir est fausse"
         ) from erreur
 
-    if timeout < 0:
+    if not timeout > 0:
         raise argparse.ArgumentTypeError(
             "le timeout doit être strictement supérieur à zéro"
         )
@@ -182,6 +182,26 @@ def analyser_plage_ports(texte: str) -> tuple[int, int]:
     return port_debut, port_fin
 
 
+def validation_threads(thread: str) -> int:
+    WORKER_MIN = 1
+    WORKER_MAX = 100
+    result = 0
+    
+    try:
+        result = int(thread)
+
+    except ValueError:
+        raise argparse.ArgumentTypeError("Veuillez saisir une valeur entière")
+
+    if result <= 0:
+        raise argparse.ArgumentTypeError("Veuillez saisir une valeur surpérieur à 0")
+
+    if not (WORKER_MIN <= result <= WORKER_MAX):
+        raise argparse.ArgumentTypeError("La valeur saisir doit être comprise entre 1 et 100")
+
+    return result
+
+
 ########################### Scanne des ports #########################################
 
 def analyser_arguments() -> argparse.Namespace:
@@ -203,13 +223,18 @@ def analyser_arguments() -> argparse.Namespace:
         type=analyser_timeout,
         default=0.5
     )
+    parser.add_argument(
+        "--threads",
+        default=1,
+        type=validation_threads,
+        help="Nombre maximal de thread, par défaut: 1"
+    )
     return parser.parse_args()
 
 
 ########################### Threading #########################################
 
 def worker(hote:str, timeout:float, file_ports, ports_ouvert:list[int], numero:int, verrou_port_ouvert) -> None:
-    print(f"Démarage du worker - {numero}")
 
     while True:
 
@@ -217,7 +242,6 @@ def worker(hote:str, timeout:float, file_ports, ports_ouvert:list[int], numero:i
             port = file_ports.get()
 
             if port is None:
-                print(f"Fin du worker - {numero}")
                 return 
 
         except Exception:
@@ -232,11 +256,26 @@ def worker(hote:str, timeout:float, file_ports, ports_ouvert:list[int], numero:i
                 ports_ouvert.append(port)
 
 
+def nombre_worker_requis(threads: int, nbr_ports:int):
+    worker_reel = threads
+
+    if threads > nbr_ports:
+        worker_reel = round((nbr_ports * 70) / 100)
+
+    return worker_reel
+
+
 ########################### Fonction principale #########################################
 
 def main():
 
-    NOMBRE_WORKER_SENTINELLE = 10
+    arguments = analyser_arguments()
+
+    port_debut, port_fin = arguments.ports
+
+    nombre_ports = len(range(port_debut, port_fin+1))
+
+    NOMBRE_WORKER_SENTINELLE = nombre_worker_requis(arguments.threads, nombre_ports)
 
     threads: list[threading.Thread] = []
     ports_ouverts: list[int] = []
@@ -245,8 +284,6 @@ def main():
     verrou = threading.Lock()
 
     try:
-        arguments = analyser_arguments()
-
         for port in range(arguments.ports[0], arguments.ports[1]+1):
             file_ports.put(port)
 

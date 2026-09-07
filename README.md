@@ -11,6 +11,7 @@ connexion TCP.
 - Résolution d'une adresse IPv4 ou d'un nom d'hôte
 - Plage configurable avec `--ports`
 - Timeout configurable avec `--timeout`
+- Timeout configurable avec `--threads`
 - Validation des arguments
 - Validation des ports de 1 à 65535
 - Gestion des erreurs réseau
@@ -60,12 +61,13 @@ python --version
 Syntaxe générale :
 
 ```bash
-python scanner.py CIBLE --ports DEBUT-FIN --timeout SECONDES
+python scanner.py CIBLE --ports DEBUT-FIN --timeout SECONDES --threads ENTIER
 ```
 
 - `CIBLE` : adresse IPv4 ou nom d'hôte.
 - `--ports` : plage TCP inclusive au format `DEBUT-FIN`.
 - `--timeout` : délai maximal par tentative, en secondes.
+- `--threads` : Nombre de workers utilisés pour traiter la file de ports.
 
 ### Scanner les ports 20 à 100
 
@@ -83,6 +85,12 @@ python scanner.py 127.0.0.1 --ports 20-100 --timeout 0.5
 
 ```bash
 python scanner.py 127.0.0.1 --ports 8000-8000
+```
+
+### Scan Multithreads
+
+```bash
+python scanner.py 127.0.0.1 --ports 1-1000 --threads 50
 ```
 
 ### Afficher l'aide
@@ -124,12 +132,10 @@ Pour chaque port de la plage, le programme :
 ## Limites
 
 - Le programme teste uniquement les connexions TCP.
-- Le scan est séquentiel.
 - UDP et IPv6 ne sont pas pris en charge dans cette version.
 - Une connexion réussie ne garantit pas l'identité du service.
 - Un timeout ne prouve pas qu'un port est fermé.
 - Un timeout trop court peut produire des faux négatifs.
-- La durée du scan augmente avec la taille de la plage et le timeout.
 
 ## Utilisation responsable
 
@@ -177,6 +183,12 @@ Résultat attendu : la plage est refusée.
 
 ```bash
 python scanner.py 127.0.0.1 --ports 65000-70000
+```
+
+### Threads supérieurs au nombre de ports
+
+```bash
+python scanner.py 127.0.0.1 --ports 8000-8000 --threads 50
 ```
 
 Résultat attendu : la plage est refusée.
