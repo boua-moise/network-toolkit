@@ -1,11 +1,11 @@
 """Outil pédagogique de vérification d'un port TCP."""
 
-import socket, argparse, errno, sys, threading, queue
+import socket, argparse, errno, sys, threading, queue, time, json
 
 
 ########################### Scanne des ports #########################################
 
-def scanner_port(hote: str, port: int, timeout: float = 0.5) -> tuple[int, str]:
+def scanner_port(hote: str, port: int, erreur_scan: dict, timeout: float = 0.5) -> bool:
 
     """
     Vérifie si une connexion TCP peut être établie.
@@ -19,8 +19,6 @@ def scanner_port(hote: str, port: int, timeout: float = 0.5) -> tuple[int, str]:
         True si la connexion réussit, False si non
     """
 
-    etat = ""
-
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_scan:
         
@@ -28,7 +26,9 @@ def scanner_port(hote: str, port: int, timeout: float = 0.5) -> tuple[int, str]:
         
                 resultat_test = socket_scan.connect_ex((hote, port))
 
-    except OSError:
+    except OSError as erreur:
+
+        erreur_scan[f"{port}"] = f"Erreur: {erreur}"
 
         return False
 
@@ -67,13 +67,14 @@ def scanner_plage_ports(
 
     for compte, port in enumerate(range(premier_port, dernier_port + 1), start=1):
 
-        ports_ouverts.append(scanner_port(hote, port, timeout))
+        ports_ouverts.append(scanner_port(hote, port, {}, timeout))
 
         print(f"[{compte}/{total_ports}] Test du port {port}")
 
     return ports_ouverts
 
-def analyser_timeout(texte:str) -> float:
+
+def analyser_timeout(texte: str) -> float:
     try:
         timeout = float(texte)
 
@@ -92,7 +93,7 @@ def analyser_timeout(texte:str) -> float:
 
 ########################### Sortie du scanne des ports #########################################
 
-def afficher_resultats(hote:str, ports_ouverts:tuple[int, str]) -> None:
+def afficher_resultats(rapport: dict, chemin: str) -> None:
 
     """
     Affiche le résultat du scan
@@ -102,20 +103,49 @@ def afficher_resultats(hote:str, ports_ouverts:tuple[int, str]) -> None:
 
     print("#" * 40, "RESULTAT", "#" * 40)
 
-    print(f"Résultat des tests de ports ouverts sur {hote}")
+    print(f"""
+Network Toolkit v0.2
 
-    if not ports_ouverts:
+Cible : {rapport["target"]}
+Adresse résolue: {rapport["resolved_ip"]}
+Ports : {rapport["port_range"]["start"]}-{rapport["port_range"]["end"]}
+Workers : {rapport["threads_réel"]}
+Timeout : {rapport["timeout"]} s
 
+Ports ouverts
+--------------""")
+    
+    for port_ouvert in rapport["open_ports"]:
+        print(port_ouvert)
+
+    if not rapport["open_ports"]:
         print("Aucun port ouvert")
 
+    print(f"""
+Résumé
+------
+Ports analysés : {rapport["analyse_ports"]}
+Ports ouverts : {rapport["open_port_count"]}
+Durée : {round(rapport["duration_seconds"], ndigits=1)} s""")
+
+    if chemin:
+        chemin = "results/" + chemin
+        creation_rapport(chemin, rapport)
+        print(f"Export : {chemin}")
+            
+
     else:
-        for port in ports_ouverts:
-            print(f"- Port {port} ouvert")
+        print("Export : non demandé")
+
+
+def creation_rapport(chemin: str, rapport: dict):
+    with open(chemin, "w", encoding="utf-8") as fichier:
+        json.dump(rapport, fichier, indent=2, ensure_ascii=False)
 
 
 ########################### Vériffication d'adresse IP #########################################
 
-def resoudre_cible(cible: str) -> str:
+def resoudre_cible(hote: str) -> str:
 
     """ 
     Résout une cible en une adresse IPv4. 
@@ -125,8 +155,8 @@ def resoudre_cible(cible: str) -> str:
     """ 
 
     try:
-        cible = socket.gethostbyname(cible)
-        return cible
+        cible = socket.gethostbyname(hote)
+        return hote, cible
 
     except socket.gaierror as erreur:
         raise ValueError(
@@ -184,7 +214,7 @@ def analyser_plage_ports(texte: str) -> tuple[int, int]:
 
 def validation_threads(thread: str) -> int:
     WORKER_MIN = 1
-    WORKER_MAX = 100
+    WORKER_MAX = 200
     result = 0
     
     try:
@@ -197,12 +227,12 @@ def validation_threads(thread: str) -> int:
         raise argparse.ArgumentTypeError("Veuillez saisir une valeur surpérieur à 0")
 
     if not (WORKER_MIN <= result <= WORKER_MAX):
-        raise argparse.ArgumentTypeError("La valeur saisir doit être comprise entre 1 et 100")
+        raise argparse.ArgumentTypeError("La valeur saisir doit être comprise entre 1 et 200")
 
     return result
 
 
-########################### Scanne des ports #########################################
+########################### Vérification des arguments #########################################
 
 def analyser_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scanner TCP séquentiel.")
@@ -229,12 +259,18 @@ def analyser_arguments() -> argparse.Namespace:
         type=validation_threads,
         help="Nombre maximal de thread, par défaut: 1"
     )
+    parser.add_argument(
+        "--output",
+        default=None,
+        type=str,
+        help="Fichier d'exportation des résultats, Defaut: None"
+    )
     return parser.parse_args()
 
 
 ########################### Threading #########################################
 
-def worker(hote:str, timeout:float, file_ports, ports_ouvert:list[int], numero:int, verrou_port_ouvert) -> None:
+def worker(hote:str, timeout: float, file_ports, ports_ouvert: list[int], erreur_scan: dict, verrou:threading.Lock) -> None:
 
     while True:
 
@@ -244,23 +280,22 @@ def worker(hote:str, timeout:float, file_ports, ports_ouvert:list[int], numero:i
             if port is None:
                 return 
 
-        except Exception:
-            print("except")
+            if scanner_port(hote, port, erreur_scan, timeout):
+                with verrou:
+                    ports_ouvert.append(port)
+
+        except OSError as erreur:
+            erreur_scan[f"{port}"] = f"Erreur: {erreur}"
 
         finally:
             file_ports.task_done()
 
-        if scanner_port(hote, port, timeout):
 
-            with verrou_port_ouvert:
-                ports_ouvert.append(port)
-
-
-def nombre_worker_requis(threads: int, nbr_ports:int):
+def nombre_worker_requis(threads: int, nbr_ports: int):
     worker_reel = threads
 
     if threads > nbr_ports:
-        worker_reel = round((nbr_ports * 70) / 100)
+        worker_reel = nbr_ports
 
     return worker_reel
 
@@ -279,9 +314,28 @@ def main():
 
     threads: list[threading.Thread] = []
     ports_ouverts: list[int] = []
+    erreur_scann = {}
 
-    file_ports = queue.Queue(maxsize=10000)
+    rapport = {
+        "target": arguments.cible[0],
+        "resolved_ip": arguments.cible[1],
+        "port_range": {
+            "start": port_debut,
+            "end": port_fin
+        },
+        "threads": arguments.threads,
+        "threads_réel": NOMBRE_WORKER_SENTINELLE,
+        "timeout": arguments.timeout,
+        "duration_seconds": 0,
+        "open_ports": [],
+        "analyse_ports": port_fin - port_debut + 1,
+        "open_port_count": 0,
+    }
+
+    file_ports = queue.Queue(maxsize=60000)
     verrou = threading.Lock()
+
+    debut = time.perf_counter()
 
     try:
         for port in range(arguments.ports[0], arguments.ports[1]+1):
@@ -290,10 +344,10 @@ def main():
         for _ in range(NOMBRE_WORKER_SENTINELLE):
             file_ports.put(None)
 
-        for nbr in range(NOMBRE_WORKER_SENTINELLE):
+        for _ in range(NOMBRE_WORKER_SENTINELLE):
             thread = threading.Thread(
                 target=worker,
-                args=(arguments.cible, arguments.timeout, file_ports, ports_ouverts, nbr, verrou)
+                args=(arguments.cible[1], arguments.timeout, file_ports, ports_ouverts, erreur_scann, verrou)
             )
             thread.start()
             threads.append(thread)
@@ -303,7 +357,16 @@ def main():
         for thread in threads:
             thread.join()
 
-        afficher_resultats(arguments.cible, ports_ouverts)
+        fin = time.perf_counter()
+        duree = fin - debut
+        ports_ouverts.sort()
+
+        rapport["duration_seconds"] = duree
+        rapport["open_ports"] = ports_ouverts
+        rapport["open_port_count"] = len(ports_ouverts)
+
+        afficher_resultats(rapport, arguments.output)
+        
         return 0
 
     except ValueError:
@@ -311,6 +374,16 @@ def main():
             "Erreur : la cible indiquée est invalide.",
             file=sys.stderr,
         )
+        creation_rapport("erreur/exception.json", erreur_scann)
+        return 2
+
+    except FileNotFoundError:
+        print("Export: échoué")
+        print(
+            f"Erreur : impossible d'écrire le fichier JSON demandé. Chemin '{arguments.output}' incorrect",
+            file=sys.stderr,
+        )
+        creation_rapport("erreur/exception.json", erreur_scann)
         return 2
 
     except KeyboardInterrupt:
@@ -318,6 +391,7 @@ def main():
             "Scan interrompu par l'utilisateur.",
             file=sys.stderr,
         )
+        creation_rapport("erreur/exception.json", erreur_scann)
         return 130
 
 if __name__ == "__main__":

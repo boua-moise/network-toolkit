@@ -1,0 +1,20 @@
+{
+  "target": "127.0.0.1",
+  "resolved_ip": "127.0.0.1",
+  "port_range": {
+    "start": 1,
+    "end": 1024
+  },
+  "threads": 200,
+  "threads_réel": 200,
+  "timeout": 0.5,
+  "duration_seconds": 3.0638218999956734,
+  "open_ports": [
+    135,
+    445,
+    902,
+    912
+  ],
+  "analyse_ports": 901,
+  "open_port_count": 4
+}

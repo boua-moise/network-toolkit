@@ -1,40 +1,61 @@
 # Network Toolkit
 
-Network Toolkit est un scanner TCP séquentiel développé en Python
-dans un objectif pédagogique. Il permet de tester une plage de ports
-sur une cible autorisée et d'afficher les ports qui acceptent une
-connexion TCP.
+Network Toolkit est un scanner de ports TCP multithread développé en Python dans un objectif pédagogique. Il distribue les ports à analyser dans une file de tâches partagée, utilise un nombre limité de workers et affiche les ports qui acceptent une connexion TCP.
+
+> **Utilisation responsable :** utilisez cet outil uniquement sur vos propres machines, dans un laboratoire personnel ou sur des systèmes pour lesquels vous disposez d'une autorisation explicite.
 
 ## Fonctionnalités
 
-- Scan séquentiel d'une plage de ports TCP
-- Résolution d'une adresse IPv4 ou d'un nom d'hôte
-- Plage configurable avec `--ports`
-- Timeout configurable avec `--timeout`
-- Timeout configurable avec `--threads`
-- Validation des arguments
-- Validation des ports de 1 à 65535
-- Gestion des erreurs réseau
-- Arrêt propre avec `Ctrl+C`
-- Affichage de la progression
-- Affichage des ports ouverts
+- scan d'une plage de ports TCP IPv4 ;
+- résolution d'une adresse IPv4 ou d'un nom d'hôte ;
+- distribution des ports avec `queue.Queue` ;
+- pool limité de workers ;
+- nombre de workers configurable avec `--threads` ;
+- réduction automatique du nombre réel de workers lorsque la plage contient moins de ports ;
+- timeout configurable avec `--timeout` ;
+- validation de la cible, des ports, du timeout et du nombre de workers ;
+- fermeture automatique de chaque socket ;
+- collecte des erreurs réseau techniques ;
+- tri des ports ouverts avant l'affichage ;
+- mesure de la durée avec `time.perf_counter()` ;
+- export facultatif des résultats au format JSON ;
+- gestion de l'interruption avec `Ctrl+C`.
 
-## Architecture
+## Architecture actuelle
 
 ```text
 network-toolkit/
 ├── scanner.py
 ├── README.md
-└── .gitignore
+├── .gitignore
+├── results/                 # Résultats JSON temporaires, ignorés par Git
+└── erreur/                  # Erreurs techniques temporaires, ignorées par Git
+```
+
+Le fonctionnement général est le suivant :
+
+```text
+Arguments validés
+      ↓
+Résolution de la cible
+      ↓
+Ports ajoutés à queue.Queue
+      ↓
+Pool limité de workers
+      ↓
+Résultats partagés et protégés
+      ↓
+Tri et construction du rapport
+      ↓
+Affichage console et export JSON facultatif
 ```
 
 ## Prérequis
 
-- Python 3.10 ou version ultérieure
-- Git, uniquement pour cloner ou contribuer au projet
+- Python 3.10 ou une version ultérieure ;
+- Git, uniquement pour cloner le dépôt ou contribuer au projet.
 
-Le projet utilise uniquement la bibliothèque standard Python.
-Aucune dépendance externe n'est nécessaire.
+Le projet utilise uniquement la bibliothèque standard de Python. Aucune dépendance externe n'est nécessaire.
 
 ## Installation
 
@@ -44,7 +65,7 @@ Clonez le dépôt :
 git clone URL_DU_DEPOT
 ```
 
-Entrez dans le répertoire :
+Entrez dans le projet :
 
 ```bash
 cd network-toolkit
@@ -56,42 +77,41 @@ Vérifiez la version de Python :
 python --version
 ```
 
+Créez les dossiers utilisés pour les rapports temporaires s'ils ne sont pas déjà présents :
+
+```bash
+mkdir -p results erreur
+```
+
+Sous PowerShell :
+
+```powershell
+New-Item -ItemType Directory -Force results, erreur
+```
+
 ## Utilisation
 
-Syntaxe générale :
+### Syntaxe générale
 
 ```bash
-python scanner.py CIBLE --ports DEBUT-FIN --timeout SECONDES --threads ENTIER
+python scanner.py CIBLE --ports DEBUT-FIN --threads NOMBRE --timeout SECONDES --output FICHIER
 ```
 
-- `CIBLE` : adresse IPv4 ou nom d'hôte.
-- `--ports` : plage TCP inclusive au format `DEBUT-FIN`.
-- `--timeout` : délai maximal par tentative, en secondes.
-- `--threads` : Nombre de workers utilisés pour traiter la file de ports.
+### Arguments et options
 
-### Scanner les ports 20 à 100
+- `CIBLE` : adresse IPv4 ou nom d'hôte à résoudre ;
+- `--ports DEBUT-FIN` : plage inclusive de ports TCP, par défaut `80-80` ;
+- `--threads NOMBRE` : nombre de workers demandés, par défaut `1` ;
+- `--timeout SECONDES` : délai maximal par tentative, par défaut `0.5` seconde ;
+- `--output FICHIER` : nom facultatif du fichier JSON créé dans le dossier `results/`.
 
-```bash
-python scanner.py 127.0.0.1 --ports 20-100
-```
+### Limites de `--threads`
 
-### Modifier le timeout
+- minimum : `1` worker ;
+- maximum : `200` workers ;
+- valeur par défaut : `1` worker.
 
-```bash
-python scanner.py 127.0.0.1 --ports 20-100 --timeout 0.5
-```
-
-### Tester un seul port
-
-```bash
-python scanner.py 127.0.0.1 --ports 8000-8000
-```
-
-### Scan Multithreads
-
-```bash
-python scanner.py 127.0.0.1 --ports 1-1000 --threads 50
-```
+Lorsque le nombre demandé dépasse le nombre de ports à analyser, le programme limite le nombre réel de workers au nombre de ports.
 
 ### Afficher l'aide
 
@@ -99,9 +119,41 @@ python scanner.py 127.0.0.1 --ports 1-1000 --threads 50
 python scanner.py --help
 ```
 
-## Exemple contrôlé
+## Exemples
 
-Dans un premier terminal, démarrez un serveur HTTP local :
+### Scanner les ports 20 à 100
+
+```bash
+python scanner.py 127.0.0.1 --ports 20-100
+```
+
+### Utiliser plusieurs workers
+
+```bash
+python scanner.py 127.0.0.1 --ports 1-1000 --threads 50
+```
+
+### Modifier le timeout
+
+```bash
+python scanner.py 127.0.0.1 --ports 20-100 --threads 10 --timeout 0.2
+```
+
+### Exporter le résultat
+
+```bash
+python scanner.py 127.0.0.1 --ports 1-1000 --threads 50 --timeout 0.5 --output result.json
+```
+
+Le fichier est alors écrit dans :
+
+```text
+results/result.json
+```
+
+## Test local contrôlé
+
+Dans un premier terminal, démarrez un serveur HTTP lié uniquement à l'interface locale :
 
 ```bash
 python -m http.server 8000 --bind 127.0.0.1
@@ -110,93 +162,190 @@ python -m http.server 8000 --bind 127.0.0.1
 Dans un second terminal, lancez le scanner :
 
 ```bash
-python scanner.py 127.0.0.1 --ports 7995-8005
+python scanner.py 127.0.0.1 --ports 7995-8005 --threads 5 --timeout 0.5 --output result.json
 ```
 
-Le port `8000` devrait être affiché comme ouvert.
+Le port `8000` doit apparaître dans la liste des ports ouverts.
 
-Arrêtez ensuite le serveur avec `Ctrl+C`, puis relancez le scanner.
-Le port `8000` ne devrait plus apparaître.
+Arrêtez ensuite le serveur HTTP avec `Ctrl+C`, puis relancez le scanner. Le port `8000` ne doit plus apparaître comme ouvert.
 
-## Fonctionnement général
+## Sortie console
 
-Pour chaque port de la plage, le programme :
+Exemple de présentation :
 
-1. crée un nouveau socket TCP IPv4 ;
-2. configure le timeout demandé ;
-3. tente d'établir une connexion ;
-4. enregistre le port si la connexion réussit ;
-5. ferme automatiquement le socket ;
-6. passe au port suivant.
+```text
+Network Toolkit v0.2
 
-## Limites
+Cible : 127.0.0.1
+Adresse résolue : 127.0.0.1
+Ports : 7995-8005
+Workers : 5
+Timeout : 0.5 s
 
-- Le programme teste uniquement les connexions TCP.
-- UDP et IPv6 ne sont pas pris en charge dans cette version.
-- Une connexion réussie ne garantit pas l'identité du service.
-- Un timeout ne prouve pas qu'un port est fermé.
-- Un timeout trop court peut produire des faux négatifs.
+Ports ouverts
+-------------
+8000
 
-## Utilisation responsable
+Résumé
+------
+Ports analysés : 11
+Ports ouverts : 1
+Durée : 0.1 s
+Export : results/result.json
+```
 
-Ce projet est destiné à l'apprentissage de Python et des concepts
-réseau.
+Sans `--output`, le programme affiche :
 
-Utilisez-le uniquement :
+```text
+Export : non demandé
+```
 
-- sur vos propres machines ;
-- dans un laboratoire personnel ;
-- sur des systèmes pour lesquels vous disposez d'une autorisation
-  explicite.
+## Structure du JSON
 
-L'utilisateur est responsable du respect des règles et lois
-applicables à son environnement.
+Exemple indicatif :
 
-## Tests manuels
+```json
+{
+  "target": "127.0.0.1",
+  "resolved_ip": "127.0.0.1",
+  "port_range": {
+    "start": 7995,
+    "end": 8005
+  },
+  "threads": 5,
+  "threads_réel": 5,
+  "timeout": 0.5,
+  "duration_seconds": 0.12,
+  "open_ports": [
+    8000
+  ],
+  "analyse_ports": 11,
+  "open_port_count": 1
+}
+```
 
-### Serveur local actif
+La durée et les ports ouverts dépendent de l'environnement réel. Les ports ouverts sont triés avant la création du rapport.
+
+### Valider le JSON
 
 ```bash
-python -m http.server 8000 --bind 127.0.0.1
-python scanner.py 127.0.0.1 --ports 7995-8005
+python -m json.tool results/result.json
 ```
 
-Résultat attendu : le port `8000` est détecté.
+La commande doit afficher le contenu formaté sans erreur de syntaxe.
 
-### Serveur local arrêté
+## Validations intégrées
+
+Le programme refuse notamment :
+
+- une plage qui ne respecte pas le format `DEBUT-FIN` ;
+- un port inférieur à `1` ou supérieur à `65535` ;
+- une plage inversée ;
+- un timeout nul, négatif ou non numérique ;
+- un nombre de workers inférieur à `1` ou supérieur à `200` ;
+- une valeur non entière pour `--threads` ;
+- une cible qui ne peut pas être résolue.
+
+Exemples de commandes invalides :
 
 ```bash
-python scanner.py 127.0.0.1 --ports 7995-8005
+python scanner.py 127.0.0.1 --ports 100-20 --threads 5
+python scanner.py 127.0.0.1 --ports 0-70000 --threads 5
+python scanner.py 127.0.0.1 --ports 20-100 --threads 0
+python scanner.py 127.0.0.1 --ports 20-100 --threads 201
+python scanner.py 127.0.0.1 --ports 20-100 --threads abc
+python scanner.py 127.0.0.1 --ports 20-100 --timeout 0
+python scanner.py cible-inexistante.invalid --ports 20-100 --threads 5
 ```
 
-Résultat attendu : le port `8000` n'est pas détecté.
+## Tests manuels recommandés
 
-### Plage inversée
+### Cohérence entre un et plusieurs workers
 
 ```bash
-python scanner.py 127.0.0.1 --ports 100-20
+python scanner.py 127.0.0.1 --ports 1-1000 --threads 1 --timeout 0.2
+python scanner.py 127.0.0.1 --ports 1-1000 --threads 50 --timeout 0.2
 ```
 
-Résultat attendu : la plage est refusée.
+Les listes de ports ouverts doivent être identiques, même si les durées diffèrent.
 
-### Port hors limites
-
-```bash
-python scanner.py 127.0.0.1 --ports 65000-70000
-```
-
-### Threads supérieurs au nombre de ports
+### Un seul port avec plusieurs workers demandés
 
 ```bash
 python scanner.py 127.0.0.1 --ports 8000-8000 --threads 50
 ```
 
-Résultat attendu : la plage est refusée.
+Le programme doit utiliser un seul worker réel et se terminer normalement.
 
-## Améliorations possibles
+### Interruption
 
-- Ajouter des tests automatisés
-- Ajouter un mode silencieux
-- Exporter les résultats en JSON
-- Ajouter un résumé de la durée du scan
-- Étudier IPv6
+Lancez un scan local suffisamment long, puis utilisez `Ctrl+C` :
+
+```bash
+python scanner.py 127.0.0.1 --ports 1-65535 --threads 1 --timeout 0.5
+```
+
+Le programme doit afficher un message d'interruption compréhensible et revenir au terminal.
+
+## Limites connues
+
+- le scanner teste uniquement les connexions TCP IPv4 ;
+- UDP et IPv6 ne sont pas pris en charge dans cette version ;
+- une connexion réussie ne garantit pas l'identité exacte du service ;
+- un timeout ne permet pas toujours de distinguer un port filtré d'un hôte inaccessible ;
+- un timeout trop court peut produire des faux négatifs ;
+- les résultats peuvent être influencés par les pare-feu et les politiques réseau ;
+- la durée dépend de la cible, du réseau, du timeout et du nombre de workers ;
+- augmenter le nombre de workers ne garantit pas une accélération proportionnelle ;
+- les dossiers `results/` et `erreur/` doivent exister avant l'écriture des rapports dans la version actuelle ;
+- la détection précise des services n'est pas incluse.
+
+## Gestion des fichiers temporaires
+
+Le `.gitignore` exclut notamment :
+
+```gitignore
+result.json
+results/
+erreur/
+.env
+.venv/
+__pycache__/
+*.py[cod]
+```
+
+Les résultats réels d'un scan ne doivent pas être publiés inutilement dans le dépôt.
+
+## Utilisation responsable
+
+Network Toolkit est destiné à l'apprentissage de Python, du réseau TCP et de la concurrence.
+
+Utilisez-le uniquement :
+
+- sur vos propres machines ;
+- dans un laboratoire personnel ;
+- sur une infrastructure de formation prévue à cet effet ;
+- sur des systèmes pour lesquels vous disposez d'une autorisation explicite.
+
+L'utilisateur reste responsable du respect des règles, des politiques et des lois applicables à son environnement.
+
+## Bilan d'apprentissage de la version v0.2
+
+Cette version permet de mettre en pratique :
+
+- la différence entre le thread principal et les workers ;
+- la création et l'attente de threads ;
+- la distribution dynamique des ports avec `queue.Queue` ;
+- l'utilisation de sentinelles pour arrêter les workers ;
+- le rôle de `task_done()` et de `Queue.join()` ;
+- la protection des données partagées avec un verrou ;
+- la configuration et la validation des timeouts ;
+- la limitation explicite de la concurrence ;
+- la mesure de performances avec `time.perf_counter()` ;
+- la construction d'un rapport unique ;
+- l'export des résultats avec `json.dump()` ;
+- les limites pratiques du multithreading appliqué aux opérations réseau.
+
+## Version
+
+Version actuelle : `v0.2`
