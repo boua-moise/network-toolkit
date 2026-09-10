@@ -62,7 +62,7 @@ Le projet utilise uniquement la bibliothèque standard de Python. Aucune dépend
 Clonez le dépôt :
 
 ```bash
-git clone URL_DU_DEPOT
+git clone [URL_DU_DEPOT](https://github.com/boua-moise/network-toolkit.git)
 ```
 
 Entrez dans le projet :
