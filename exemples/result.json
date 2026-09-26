@@ -1,20 +1,17 @@
 {
-  "target": "127.0.0.1",
-  "resolved_ip": "127.0.0.1",
-  "port_range": {
-    "start": 1,
-    "end": 1024
+  "hote": "127.0.0.1",
+  "hote_relosolu": "127.0.0.1",
+  "plage_port": {
+    "debut": 7995,
+    "fin": 8005
   },
-  "threads": 200,
-  "threads_réel": 200,
+  "threads": 5,
+  "threads_reel": 5,
   "timeout": 0.5,
-  "duration_seconds": 3.0638218999956734,
-  "open_ports": [
-    135,
-    445,
-    902,
-    912
+  "duree": 0.0026317499996366678,
+  "ports_ouvert": [
+    8000
   ],
-  "analyse_ports": 901,
-  "open_port_count": 4
+  "nbr_ports_analyser": 11,
+  "nbr_ports_ouvert": 1
 }
